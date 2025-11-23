@@ -204,7 +204,7 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl enable tomcat
 sudo systemctl start tomcat
-sudo systemctl status tomcat
+sudo systemctl --no-pager status tomcat
 
 echo "=== Tomcat installation completed successfully! ==="
 
