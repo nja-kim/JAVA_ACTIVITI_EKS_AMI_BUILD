@@ -120,6 +120,10 @@ echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.
   sudo tee /etc/apt/sources.list.d/kubernetes.list
 
 sudo apt-get update -y
+echo "Fixing CNI conflict..."
+sudo apt-get remove -y cnitool-plugins containerd.io || true
+sudo apt-get autoremove -y || true
+
 sudo apt install -y kubelet kubeadm kubectl
 sudo apt-mark hold kubelet kubeadm kubectl
 sudo systemctl enable kubelet
