@@ -62,16 +62,16 @@ source "amazon-ebs" "amazon_ebs" {
   iam_instance_profile = "EC2BootstrapRole"
 
   region      = var.aws_region
-  ssh_username = "ec2-user"
+  ssh_username = "ubuntu"
   ssh_pty     = true
   ssh_timeout = "5m"
 
   launch_block_device_mappings {
     delete_on_termination = true
-    device_name           = "/dev/xvda"
+    device_name           = "/dev/sda1"
     encrypted             = false
     volume_size           = 40
-    volume_type           = "gp2"
+    volume_type           = "gp3"
   }
 
   #Replace source_ami with source_ami_filter
