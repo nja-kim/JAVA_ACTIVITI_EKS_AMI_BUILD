@@ -18,6 +18,23 @@ REGION=${AVAILABILITY_ZONE:0:-1}
 
 sudo apt-get update -y
 
+HOSTNAME=$(hostname)
+echo "==========Setting hostname to ${MY_HOSTNAME}..."
+printf '%s\n' "${MY_HOSTNAME}" > /etc/hostname
+echo "127.0.1.1   ${MY_HOSTNAME}" | sudo tee -a /etc/hosts > /dev/null
+
+# sudo hostnamectl set-hostname ${MY_HOSTNAME}
+sudo hostnamectl set-hostname "${MY_HOSTNAME}" || sudo hostname -F /etc/hostname
+
+# Add both hostnames to 127.0.0.1 line, removing any duplicates first
+sudo sed -i "/^127\.0\.0\.1/{
+    s/\b${HOSTNAME}\b//g;
+    s/$/ ${HOSTNAME} ${MY_HOSTNAME}/
+}" /etc/hosts
+
+# Optionally print to confirm
+echo "Hostname set to $(hostname)"
+
 #################################
 #------Fix DNS Resolution--------
 #################################
