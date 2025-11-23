@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -ex
 KUBE_VERSION="${KUBE_VERSION:-1.30}"
 AWS_REGION="us-east-1"
 POD_CIDR="10.244.0.0/16"
@@ -70,7 +70,7 @@ sudo apt update -y
 sudo apt install -y docker-ce docker-ce-cli containerd.io
 sudo docker --version
 sudo usermod -aG docker ubuntu
-newgrp docker
+# newgrp docker # DO NOT run newgrp inside Packer – it hangs forever
 
 echo "================================================================="
 echo "---------------System Config Modification-------------"
