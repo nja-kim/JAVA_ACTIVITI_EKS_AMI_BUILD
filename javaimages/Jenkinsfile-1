@@ -75,8 +75,8 @@ pipeline {
             )
             echo "Selected environment: ${env.ENVIRONMENT}"
 			sh """
-				echo "${env.ENVIRONMENT}" > images/selected_env.txt
-				cat images/selected_env.txt
+				echo "${env.ENVIRONMENT}" > javaimages/k8selected_env.txt
+				cat javaimages/k8selected_env.txt
 			"""
             // slackSend (color: '#800080', message: " :tada: Selected ${env.ENVIRONMENT} env ")
 
@@ -374,7 +374,7 @@ EOF
 
 				sh '''
 					set -euo pipefail
-					cd images
+					cd javaimages
 					AMI_ID=$(cat java_k8_ami_id.txt)
 
 					INSTANCE_ID=$(aws ec2 run-instances \
