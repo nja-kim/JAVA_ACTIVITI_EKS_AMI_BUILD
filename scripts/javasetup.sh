@@ -182,7 +182,8 @@ Type=forking
 User=tomcat
 Group=tomcat
 
-Environment=JAVA_HOME=/usr/lib/jvm/java-1.8.0-openjdk
+# Environment=JAVA_HOME=/usr/lib/jvm/java-1.8.0-openjdk
+Environment=JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
 Environment=CATALINA_HOME=/usr/local/tomcat/latest
 Environment=CATALINA_BASE=/usr/local/tomcat/latest
 Environment=CATALINA_PID=/usr/local/tomcat/latest/temp/tomcat.pid
@@ -203,6 +204,7 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl enable tomcat
 sudo systemctl start tomcat
+sudo systemctl status tomcat
 
 echo "=== Tomcat installation completed successfully! ==="
 
