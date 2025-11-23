@@ -6,6 +6,7 @@ AWS_REGION="us-east-1"
 POD_CIDR="10.244.0.0/16"
 
 CLUSTER_NAME="java-activiti-cluster"
+AUTO_ECR_REGISTRY="182498323465.dkr.ecr.us-east-1.amazonaws.com"
 AUTO_ECR_IMAGE_URI="182498323465.dkr.ecr.us-east-1.amazonaws.com/java-k8-activiti-repository:activiti-img-1.0"
 DEV_ECR_IMAGE_URI="612713811844.dkr.ecr.us-east-1.amazonaws.com/java-k8-activiti-repository:activiti-img-1.0"
 TEST_ECR_IMAGE_URI="720791945719.dkr.ecr.us-east-1.amazonaws.com/java-k8-activiti-repository:activiti-img-1.0"
