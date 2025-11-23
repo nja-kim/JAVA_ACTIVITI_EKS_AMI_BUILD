@@ -165,11 +165,11 @@ pipeline {
 		steps {
 			script {
 			// slackSend(
-				color: '#FFFF00',
-				message: """ *Stage:* Creating ECR Repository in ${env.ENVIRONMENT}...
-*Runner:* ${env.RUNNER}  
-*Job:* ${env.JOB_NAME} [#${env.BUILD_NUMBER}]"""
-			)
+// 				color: '#FFFF00',
+// 				message: """ *Stage:* Creating ECR Repository in ${env.ENVIRONMENT}...
+// *Runner:* ${env.RUNNER}  
+// *Job:* ${env.JOB_NAME} [#${env.BUILD_NUMBER}]"""
+// 			)
             // // slackSend (color: '#FFFF00', message: "STARTING :flag-ke: *${env.RUNNER}'s* :flag-ke: Packer JAVA-KUBERNETES-AMI Build: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
 			// 🔸 Construct env-specific role ARN from selected account + role name
 			def roleArn = "arn:aws:iam::${env.AWS_ACCOUNT_ID}:role/${env.ROLE_NAME}"
