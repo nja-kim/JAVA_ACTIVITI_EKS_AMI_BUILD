@@ -16,6 +16,7 @@ REPO_NAME="java-k8-activiti-repository"
 AVAILABILITY_ZONE=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
 REGION=${AVAILABILITY_ZONE:0:-1}
 
+sudo apt-get update -y
 
 #################################
 #------Fix DNS Resolution--------
@@ -28,7 +29,7 @@ echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf > /dev/null
 echo "================================================================="
 echo "---------------Installing AWS CLI -------------"
 echo "================================================================="
-
+sudo apt-get update -y
 sudo apt install -y unzip
 curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
 unzip -o awscliv2.zip
@@ -43,7 +44,7 @@ echo "================================================================="
 echo "---------------Installing Docker-------------"
 echo "================================================================="
 
-sudo apt update -y
+sudo apt-get update -y
 sudo apt install -y apt-transport-https ca-certificates curl software-properties-common
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
 echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | \
@@ -93,6 +94,7 @@ echo "---------------Install Kubernetes------------"
 echo "================================================================="
 
 echo "---------------Installing Kubernetes ${KUBE_VERSION}-------------"
+sudo apt-get update -y
 sudo install -m 0755 -d /etc/apt/keyrings
 curl -fsSL "https://pkgs.k8s.io/core:/stable:/v${KUBE_VERSION}/deb/Release.key" | \
   gpg --dearmor | sudo tee /etc/apt/keyrings/kubernetes-apt-keyring.gpg > /dev/null
@@ -100,14 +102,14 @@ curl -fsSL "https://pkgs.k8s.io/core:/stable:/v${KUBE_VERSION}/deb/Release.key" 
 echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${KUBE_VERSION}/deb/ /" | \
   sudo tee /etc/apt/sources.list.d/kubernetes.list
 
-sudo apt update -y
+sudo apt-get update -y
 sudo apt install -y kubelet kubeadm kubectl
 sudo apt-mark hold kubelet kubeadm kubectl
 sudo systemctl enable kubelet
 
 #  1) Install OpenJDK 8
 echo "Installing OpenJDK 8..."
-sudo apt update -y
+sudo apt-get update -y
 sudo apt install -y openjdk-8-jdk
 
 sudo readlink -f $(which java)
@@ -119,6 +121,7 @@ sudo useradd -m -U -d /usr/local/tomcat -s /bin/false tomcat || echo "Tomcat use
 
 # 3) Install wget and download Tomcat
 echo "Downloading Apache Tomcat 9.0.33..."
+sudo apt-get update -y
 sudo apt install -y wget || true
 cd /tmp
 
@@ -186,6 +189,7 @@ echo "=== Tomcat installation completed successfully! ==="
 cd ~
 sudo mkdir /home/ubuntu/apps
 cd /home/ubuntu/apps
+sudo apt-get update -y
 sudo apt install git -y
 sudo apt install maven -y
 which git
@@ -210,6 +214,7 @@ sudo apt autoclean || true
 
 #--------install MariaDB
 sudo apt update
+sudo apt-get update -y
 sudo apt install -y mariadb-server
 sudo systemctl enable mariadb
 sudo systemctl start mariadb
@@ -277,7 +282,7 @@ source /etc/profile.d/java8.sh
 echo "Verifying Java and Maven setup..."
 java -version
 mvn -version
-
+sudo apt-get update -y
 sudo mvn clean install
 
 # 20) target dir has been created
