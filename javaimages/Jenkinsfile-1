@@ -36,7 +36,7 @@ pipeline {
                     set -euo pipefail
 
                     #AMI pattern to look for
-                    AMI_NAME="java-ecs-ami-stack-51"
+                    AMI_NAME="java-k8-ami-stack-51"
 
                     OLD_AMI_ID=$(aws ec2 describe-images --owners self \
                         --filters "Name=name,Values=${AMI_NAME}" \
@@ -261,7 +261,7 @@ cat > /tmp/ecr-policy.json <<-"EOF"
 EOF
 
 				aws ecr set-repository-policy \
-				--repository-name java-k8-ctiviti-repository \
+				--repository-name java-k8-activiti-repository \
 				--policy-text file:///tmp/ecr-policy.json \
 				--region ${AWS_REGION}
 
