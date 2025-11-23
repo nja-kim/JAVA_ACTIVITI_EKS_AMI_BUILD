@@ -32,7 +32,7 @@ variable "REGION" {
 
 data "amazon-ami" "source_ami" {
   filters = {
-    name                = "*ubuntu-noble-24.04-amd64-server-*"
+    name                = "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"
     root-device-type    = "ebs"
     virtualization-type = "hvm"
   }
@@ -77,7 +77,7 @@ source "amazon-ebs" "amazon_ebs" {
   #Replace source_ami with source_ami_filter
   source_ami_filter {
     filters = {
-      name                = "*ubuntu-noble-24.04-amd64-server-*"
+      name                = "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"
       virtualization-type = "hvm"
       root-device-type    = "ebs"
     }

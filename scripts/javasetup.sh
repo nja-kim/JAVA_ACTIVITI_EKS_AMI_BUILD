@@ -121,18 +121,18 @@ echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.
 
 sudo apt-get update -y
 echo "Fixing CNI conflict..."
-sudo apt-get remove -y cnitool-plugins containerd.io || true
-sudo apt-get autoremove -y || true
+# sudo apt-get remove -y cnitool-plugins containerd.io || true
+# sudo apt-get autoremove -y || true
 
 # Reinstall containerd runtime (required by both Docker & Kubernetes)
 sudo apt-get install -y containerd.io
-# Ensure Docker starts and is enabled
-sudo systemctl daemon-reload
-sudo systemctl enable docker
-sudo systemctl start docker
+# # Ensure Docker starts and is enabled
+# sudo systemctl daemon-reload
+# sudo systemctl enable docker
+# sudo systemctl start docker
 
-# OPTIONAL: verify Docker before continuing
-sudo docker --version || { echo "Docker failed to install"; exit 1; }
+# # OPTIONAL: verify Docker before continuing
+# sudo docker --version || { echo "Docker failed to install"; exit 1; }
 
 sudo apt install -y kubelet kubeadm kubectl
 sudo apt-mark hold kubelet kubeadm kubectl
