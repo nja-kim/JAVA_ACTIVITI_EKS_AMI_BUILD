@@ -49,7 +49,6 @@ pipeline {
                         echo "Deregistered AMI: $OLD_AMI_ID"
                     else
                         echo "Did not find existing AMI matching ${AMI_NAME}"
-						echo "This is for testing purposes"
                     fi
                     '''
                 }
