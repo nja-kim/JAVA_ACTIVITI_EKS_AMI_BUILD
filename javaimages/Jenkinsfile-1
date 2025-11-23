@@ -1,0 +1,450 @@
+pipeline {
+    agent any
+    parameters {
+        // credentials credentialType: 'com.cloudbees.jenkins.plugins.awscredentials.AWSCredentialsImpl', defaultValue: 'AWS_CREDS_AUTOMATION_ACCT', name: 'AWS_AUTOMATION_ACCOUNT_CRED', required: false
+        choice(name: 'DEPLOY', choices: ['apply', 'destroy'], description: 'Terraform action to perform: apply or destroy')
+    }
+
+    environment {
+        AMI_ID="java-ecs-ami-stack-${BUILD_NUMBER}"
+    }
+
+    stages{
+
+        stage('Initial Stage') {
+            steps {
+                script {
+                    def userInput = input(
+                        id: 'confirm',
+                        message: 'Start Pipeline?',
+                        parameters: [[$class: 'BooleanParameterDefinition', defaultValue: false, description: 'Start Pipeline', name: 'confirm']]
+                    )
+                // slackSend (color: '#800080', message: "STARTING :flag-ke: *${env.RUNNER}'s* :flag-ke: JAVA-KUBERNETES-AMI BUILD: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
+                }
+            }
+        }
+
+        stage ('Clean Existing AMI') {
+            steps {
+				// slackSend(
+// 					color: '#FFFF00',
+// 					message: """*Stage:* Identifying and Removing Existing ECS Optimized AMI for Java Activiti...
+// *Runner:* ${env.RUNNER}  
+// *Job:* ${env.JOB_NAME} [#${env.BUILD_NUMBER}]""")
+                script {
+                    sh '''
+                    set -euo pipefail
+
+                    #AMI pattern to look for
+                    AMI_NAME="java-ecs-ami-stack-51"
+
+                    OLD_AMI_ID=$(aws ec2 describe-images --owners self \
+                        --filters "Name=name,Values=${AMI_NAME}" \
+                        --query "Images[*].ImageId" --output text)
+
+                    if [ -n "$OLD_AMI_ID" ]
+                    then
+                        echo "AMI exists: $OLD_AMI_ID. Deregistering.."
+                        aws ec2 deregister-image --image-id "$OLD_AMI_ID"
+                        echo "Deregistered AMI: $OLD_AMI_ID"
+                    else
+                        echo "Did not find existing AMI matching ${AMI_NAME}"
+                    fi
+                    '''
+                }
+            }
+        }
+
+        // ============================================================
+        // 1️⃣ Select Environment
+        // ============================================================
+        stage('Select Deployment Env') {
+        steps {
+			// slackSend(
+// 				color: '#FFFF00',
+// 				message: """*Stage:* Select Environment to Deploy Into...
+// *Runner:* ${env.RUNNER}  
+// *Job:* ${env.JOB_NAME} [#${env.BUILD_NUMBER}]""")
+            script {
+            env.ENVIRONMENT = input(
+                id: 'envSelect',
+                message: 'Select target environment:',
+                parameters: [
+                choice(name: 'ENVIRONMENT', choices: ['dev', 'test', 'uat', 'prod'])
+                ]
+            )
+            echo "Selected environment: ${env.ENVIRONMENT}"
+			sh """
+				echo "${env.ENVIRONMENT}" > images/selected_env.txt
+				cat images/selected_env.txt
+			"""
+            // slackSend (color: '#800080', message: " :tada: Selected ${env.ENVIRONMENT} env ")
+
+        		}
+        	}
+        }
+
+        // ============================================================
+        // 2️⃣ Load Account Info from accounts.groovy (kept in repo or Jenkins secret)
+        // ============================================================
+        stage('Load Account Info') {
+        steps {
+			// slackSend(
+// 				color: '#FFFF00',
+// 				message: """*Stage:* Retrieving account info...
+// *Runner:* ${env.RUNNER}  
+// *Job:* ${env.JOB_NAME} [#${env.BUILD_NUMBER}]""")
+            withCredentials([file(credentialsId: 'env_acc', variable: 'ACCOUNTS_FILE')]) {
+            script {
+                def envAccounts = evaluate readFile(ACCOUNTS_FILE)
+                def selected = envAccounts[env.ENVIRONMENT]
+				def automation = envAccounts['auto']
+
+                if (!selected) {
+                error "Environment '${env.ENVIRONMENT}' not found in accounts.groovy!"
+                }
+
+                env.AWS_ACCOUNT_ID = selected.account_id
+                env.AWS_REGION     = selected.region
+				env.AUTO_ACCOUNT_ID = automation.account_id
+				env.AUTO_REGION     = automation.region
+
+                echo """
+                ====================================================
+                🌍 Loaded Account Info
+                Environment : ${env.ENVIRONMENT}
+                Account ID  : ${env.AWS_ACCOUNT_ID}
+                Region      : ${env.AWS_REGION}
+                ====================================================
+                """
+                // slackSend (color: '#800080', message: " :tada: Successfully retrieved ${env.ENVIRONMENT} env vars")
+
+            }
+            }
+        }
+        }
+
+        // ============================================================
+        // 3️⃣ Load ECS tfvars (from Jenkins Secret File: JAVAECS_TFVARS)
+        // ============================================================
+		stage('Load ECS tfvars Secret') {
+		steps {
+			withCredentials([file(credentialsId: 'JAVAECS_TFVARS', variable: 'TFVARS_FILE')]) {
+			script {
+				// safer invocation avoids the interpolation warning
+				def tfvars = readFile(file: TFVARS_FILE)
+
+				env.STATIC_AWS_ACCESS_KEY_ID     = (tfvars =~ /AWS_ACCESS_KEY\s*=\s*"(.*?)"/)[0][1]
+				env.STATIC_AWS_SECRET_ACCESS_KEY = (tfvars =~ /AWS_SECRET_KEY\s*=\s*"(.*?)"/)[0][1]
+
+				// Optional: allow ROLE_NAME in tfvars; default to "Engineer"
+				def roleNameMatch = (tfvars =~ /ROLE_NAME\s*=\s*"(.*?)"/)
+				env.ROLE_NAME = roleNameMatch ? roleNameMatch[0][1] : 'Engineer'
+
+				// Region should already come from accounts.groovy; if not, fallback:
+				if (!env.AWS_REGION?.trim()) {
+				def regMatch = (tfvars =~ /AWS_REGION\s*=\s*"(.*?)"/)
+				if (regMatch) env.AWS_REGION = regMatch[0][1]
+				}
+
+				echo """
+				🔐 Loaded JAVAECS_TFVARS
+				- ROLE_NAME : ${env.ROLE_NAME}
+				- Region    : ${env.AWS_REGION}
+				"""
+			}
+			}
+		}
+		}
+
+
+        // ============================================================
+        // 3️⃣ Combined Stage — Assume Role + Login + Create/Recreate Repo
+        // ============================================================
+		stage('Assume Role, Login, and Recreate ECR Repository') {
+		steps {
+			script {
+			// slackSend(
+				color: '#FFFF00',
+				message: """ *Stage:* Creating ECR Repository in ${env.ENVIRONMENT}...
+*Runner:* ${env.RUNNER}  
+*Job:* ${env.JOB_NAME} [#${env.BUILD_NUMBER}]"""
+			)
+            // // slackSend (color: '#FFFF00', message: "STARTING :flag-ke: *${env.RUNNER}'s* :flag-ke: Packer JAVA-KUBERNETES-AMI Build: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
+			// 🔸 Construct env-specific role ARN from selected account + role name
+			def roleArn = "arn:aws:iam::${env.AWS_ACCOUNT_ID}:role/${env.ROLE_NAME}"
+			echo """
+			====================================================
+			Will assume: ${roleArn}
+			Env/Acct  : ${env.ENVIRONMENT} / ${env.AWS_ACCOUNT_ID}
+			Region    : ${env.AWS_REGION}
+			====================================================
+			"""
+
+			// Assume role using static keys from tfvars
+			def credsJson = sh(
+				script: """
+				AWS_ACCESS_KEY_ID='${env.STATIC_AWS_ACCESS_KEY_ID}' \
+				AWS_SECRET_ACCESS_KEY='${env.STATIC_AWS_SECRET_ACCESS_KEY}' \
+				aws sts assume-role \
+					--role-arn "${roleArn}" \
+					--role-session-name JenkinsECRSession-${env.ENVIRONMENT} \
+					--query 'Credentials' --output json
+				""",
+				returnStdout: true
+			).trim()
+
+			def creds = readJSON text: credsJson
+			env.AWS_ACCESS_KEY_ID     = creds.AccessKeyId
+			env.AWS_SECRET_ACCESS_KEY = creds.SecretAccessKey
+			env.AWS_SESSION_TOKEN     = creds.SessionToken
+
+			echo "Assumed ${roleArn}"
+
+			// Login + (re)create repo in the selected env
+			sh """
+				set -euo pipefail
+
+				echo "🔹 Logging into ECR for ${ENVIRONMENT} (${AWS_ACCOUNT_ID})..."
+				AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
+				AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+				AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN} \
+				aws ecr get-login-password --region ${AWS_REGION} \
+				| docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+
+				echo "🔹 Ensuring clean repo: java-k8-activiti-repository"
+				if AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
+				AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+				AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN} \
+				aws ecr describe-repositories --repository-names java-k8-activiti-repository --region ${AWS_REGION} >/dev/null 2>&1; then
+				echo "Exists — deleting..."
+				AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
+				AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+				AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN} \
+				aws ecr delete-repository --repository-name java-k8-activiti-repository --region ${AWS_REGION} --force
+				fi
+
+				echo "📦 Creating repo java-k8-activiti-repository..."
+				AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
+				AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+				AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN} \
+				aws ecr create-repository --repository-name java-k8-activiti-repository --region ${AWS_REGION}
+
+cat > /tmp/ecr-policy.json <<-"EOF"
+{
+  "Version": "2008-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowCrossAccountPull",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": [
+          "arn:aws:iam::612713811844:root",
+          "arn:aws:iam::720791945719:root",
+          "arn:aws:iam::139282550922:root",
+          "arn:aws:iam::184888967663:root",
+          "arn:aws:iam::182498323465:root"
+        ]
+      },
+      "Action": [
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage",
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:InitiateLayerUpload",
+        "ecr:PutImage",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload"
+      ]
+    }
+  ]
+}
+EOF
+
+				aws ecr set-repository-policy \
+				--repository-name java-k8-ctiviti-repository \
+				--policy-text file:///tmp/ecr-policy.json \
+				--region ${AWS_REGION}
+
+
+				echo "ECR repo recreated in ${ENVIRONMENT} (${AWS_ACCOUNT_ID})"
+			"""
+            // slackSend (color: '#800080', message: " :tada: Successfully created ECR Repo in ${ENVIRONMENT} ")
+			}
+		}
+		}
+
+
+		stage('Packer AMI Build') {
+			when {
+				expression { params.DEPLOY != 'destroy' }
+			}
+			steps {
+				script {
+					// slackSend(
+// 						color: '#FFFF00',
+// 						message: """ *Stage:* Starting Packer AMI Build in Automation Account...
+// *Runner:* ${env.RUNNER}  
+// *Job:* ${env.JOB_NAME} [#${env.BUILD_NUMBER}]"""
+// 					)
+
+					def roleArn = "arn:aws:iam::${env.AUTO_ACCOUNT_ID}:role/${env.ROLE_NAME}"
+					echo """
+					🛠️ Using Packer to Assume Role:
+					Target Role ARN : ${roleArn}
+					Region          : ${env.AUTO_REGION}
+					"""
+
+					// Set environment variables to be passed into the shell block
+					env.TARGET_ROLE_ARN       = roleArn
+					env.PACKER_REGION         = env.AUTO_REGION
+					env.REPO_NAME             = "java-k8-activiti-repository"
+					env.REGION                = env.AUTO_REGION
+					env.IMAGE_TAG             = "activiti-img-${env.BUILD_NUMBER}"
+					env.AUTO_ECR_IMAGE_URI    = "${env.AUTO_ACCOUNT_ID}.dkr.ecr.${env.AUTO_REGION}.amazonaws.com/${env.REPO_NAME}:${env.IMAGE_TAG}"
+					env.TARGET_ACCOUNTS       = "612713811844,720791945719,139282550922,184888967663"
+				}
+
+				sh '''
+					set -euo pipefail
+					cd javaimages
+
+					export AWS_DEFAULT_REGION="$PACKER_REGION"
+					export PACKER_LOG=1
+					export PACKER_LOG_PATH=$WORKSPACE/packer.log
+
+					# Export environment for Packer provisioner
+					export REPO_NAME="$REPO_NAME"
+					export REGION="$REGION"
+					export IMAGE_TAG="$IMAGE_TAG"
+					export AUTO_ECR_IMAGE_URI="$AUTO_ECR_IMAGE_URI"
+					export TARGET_ACCOUNTS="$TARGET_ACCOUNTS"
+
+					/usr/bin/packer plugins install github.com/hashicorp/amazon
+					/usr/bin/packer build -force image.pkr.hcl | tee packer_output.log
+
+					AMI_ID=$(grep -o "ami-[a-zA-Z0-9]\\+" packer_output.log | tail -1)
+					echo "$AMI_ID" > java_k8_ami_id.txt
+					echo "Extracted AMI: $AMI_ID"
+
+					echo "java_k8_ami_id = \\"$AMI_ID\\"" > dynamic_java_ami.auto.tfvars
+				'''
+
+                // slackSend (color: '#800080', message: " :tada: Successfully completed *${env.RUNNER}'s* Packer AMI Build Stage ") 
+			}
+		}
+
+
+
+		stage('Build Instance and Vulnerability Scan') {
+			steps {
+				script {
+					// slackSend(
+// 						color: '#FFFF00',
+// 						message: """ *Stage:* Build Instance and Vulnerability Scanning...
+// *Runner:* ${env.RUNNER}  
+// *Job:* ${env.JOB_NAME} [#${env.BUILD_NUMBER}] """)
+
+					// Always assume Automation (auto) account
+					def roleArn = "arn:aws:iam::${env.AUTO_ACCOUNT_ID}:role/${env.ROLE_NAME}"
+					echo """
+					🔍 Using Automation Account for Vulnerability Scan:
+					Role ARN   : ${roleArn}
+					Account ID : ${env.AUTO_ACCOUNT_ID}
+					Region     : ${env.AUTO_REGION}
+					"""
+
+					// ✅ Use Jenkins’ attached IAM role (no static creds)
+					def credsJson = sh(
+						script: """
+							aws sts assume-role \
+								--role-arn "${roleArn}" \
+								--role-session-name JenkinsAuto-Scan \
+								--query 'Credentials' --output json
+						""",
+						returnStdout: true
+					).trim()
+
+					def creds = readJSON text: credsJson
+					env.AWS_ACCESS_KEY_ID     = creds.AccessKeyId
+					env.AWS_SECRET_ACCESS_KEY = creds.SecretAccessKey
+					env.AWS_SESSION_TOKEN     = creds.SessionToken
+					env.AWS_ACCOUNT_ID        = env.AUTO_ACCOUNT_ID
+					env.AWS_REGION            = env.AUTO_REGION
+				}
+
+				sh '''
+					set -euo pipefail
+					cd images
+					AMI_ID=$(cat java_k8_ami_id.txt)
+
+					INSTANCE_ID=$(aws ec2 run-instances \
+						--image-id $AMI_ID \
+						--count 1 \
+						--instance-type t3.micro \
+						--iam-instance-profile Arn=arn:aws:iam::182498323465:instance-profile/EC2BootstrapRole \
+						--tag-specifications 'ResourceType=instance,Tags=[{Key=Inspector,Value=Scan}]' \
+						--query 'Instances[0].InstanceId' --output text)
+
+					echo "Instance launched: $INSTANCE_ID"
+					aws ec2 wait instance-status-ok --instance-ids $INSTANCE_ID
+
+					aws ec2 describe-instances --instance-ids $INSTANCE_ID --query "Reservations[].Instances[].Tags"
+
+					RESOURCE_GROUP_ARN=$(aws inspector create-resource-group \
+						--resource-group-tags key=Inspector,value=Scan \
+						--query 'resourceGroupArn' --output text)
+
+					ASSESSMENT_TARGET_ARN=$(aws inspector create-assessment-target \
+						--assessment-target-name "JAVA-ECS-AMI-Target-${BUILD_NUMBER}" \
+						--resource-group-arn "$RESOURCE_GROUP_ARN" \
+						--query 'assessmentTargetArn' --output text)
+
+					RULES_PACKAGE_ARN=$(aws inspector list-rules-packages \
+						--region us-east-1 \
+						--query 'rulesPackageArns' --output text)
+
+					echo "Using rules package: $RULES_PACKAGE_ARN"
+
+					ASSESSMENT_TEMPLATE_ARN=$(aws inspector create-assessment-template \
+						--assessment-target-arn "$ASSESSMENT_TARGET_ARN" \
+						--assessment-template-name "JAVA-ECS-AMI-Template-${BUILD_NUMBER}" \
+						--duration-in-seconds 180 \
+						--rules-package-arns $RULES_PACKAGE_ARN \
+						--query 'assessmentTemplateArn' --output text)
+
+					aws inspector start-assessment-run \
+						--assessment-run-name "JAVA-ECS-AMI-Run-${BUILD_NUMBER}" \
+						--assessment-template-arn "$ASSESSMENT_TEMPLATE_ARN"
+
+					echo "Waiting 3 minutes to run the scan"
+					sleep 200
+
+					echo "Scanning complete...terminating instance"
+					aws ec2 terminate-instances --instance-ids $INSTANCE_ID
+					aws ec2 wait instance-terminated --instance-ids $INSTANCE_ID
+				'''
+                // slackSend (color: '#800080', message: ":tada: Successfully completed vulnerbaility scanning ")  
+			}
+		}
+
+	}
+    post {
+        success {
+            // slackSend (
+            //     color: '#36a64f', 
+            //     message: ":tada: Successfully completed :flag-ke: *${env.RUNNER}'s* :flag-ke: Kubernetes Optimized AMI Pipeline"
+            // )
+            echo 'Success'
+        }
+        failure {
+            // slackSend (
+            //     color: '#FF0000', 
+            //     message: "*${env.RUNNER}'s* PIPELINE FAILED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' <${env.BUILD_URL}|View Build>"
+            // )
+            echo 'Faileddddddddddd'
+        }
+        always {
+            echo 'Pipeline finished.'
+        }
+    }
+}
