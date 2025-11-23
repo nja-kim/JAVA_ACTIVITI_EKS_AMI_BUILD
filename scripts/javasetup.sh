@@ -279,6 +279,13 @@ EOF
 # 19) Perform Maven build (Activiti creates schema in act6)
 # ==========================================================
 cd /home/ubuntu/apps/Activiti
+echo "=== Ensuring Docker daemon is running ==="
+sudo systemctl daemon-reload
+sudo systemctl enable docker
+sudo systemctl start docker
+sleep 15
+echo "Done initializing docker"
+
 # Automatically set default java and javac to JDK 1.8 (in poc, it was option 1)
 echo "=== Configuring Amazon Corretto 8 as default Java ==="
 
